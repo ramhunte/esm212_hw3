@@ -1,0 +1,426 @@
+---
+title: "hw_3"
+author: "Ray Hunter"
+date: "2023-05-10"
+output:
+  html_document:
+    code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=TRUE, warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(janitor)
+library(here)
+library(pracma)
+
+
+
+```
+
+##  {.tabset}
+
+### 1
+
+*The data set HW3 data.csv provides price (in \$) and quantity (in
+number of EVs) estimates of demand per year for both DAC and non-DAC
+groups. Run linear regressions (with an intercept) to estimate the
+demand curves for DAC and non-DAC consumers. What are 2-3 reasons you
+can think that may explain the differences in demand you estimate?*
+
+```{r}
+#reading in the data and cleaning names 
+
+hw3_data <- read.csv(here("HW3_data.csv")) %>% 
+  clean_names() %>%  
+  rename(price = price_dollars)  %>% 
+  group_by(price) %>% 
+  #adding a new colomn for aggregate quantity 
+  mutate(ag_dem=sum(q_dac + q_non_dac)) %>% 
+  pivot_longer(
+    cols= c(q_dac:ag_dem),
+    names_to = "type",
+    values_to = "quantity")
+  
+
+
+
+
+
+#creating an lm of dac
+dac_lm <- lm(price ~ quantity, data = filter(hw3_data, type =="q_dac"))
+
+
+#lm of non dac
+non_dac_lm <- lm(price ~ quantity, data = filter(hw3_data, type =="q_non_dac"))
+
+
+```
+
+
+
+
+```{r}
+#list of functions made
+
+
+
+###################################################################
+
+
+#calculate Quantity demanded from intercept, slope, and price 
+dem_q <- function(int, P, slope){
+  Q = (int -P) / - slope
+  return(Q)
+}
+###################################################################
+
+#calculate price of quantity from intercept, slope, and price 
+dem_p <- function(int, slope, Q){
+  P = int + slope*Q
+  return(P)
+}
+
+
+###################################################################
+
+
+
+#new function solving quantity supplied at a given price 
+supp_q <- function(int2, P, slope2){
+  Q = (int2 - P)/slope2
+    return(Q)
+} 
+
+
+###################################################################
+#calculate price of quantity from intercept, slope, and price 
+supp_p <- function(int2, slope2, Q){
+  P = int2 + slope2*Q
+  return(P)
+}
+
+###################################################################
+
+
+
+#third function finding the difference between two other functions
+F3 <- function(Q, int, slope, int2, slope2){
+  z<- dem_p(int, slope, Q) - supp_p(int2, slope2, Q)
+  return(z)
+  }
+
+
+
+
+
+
+
+
+```
+
+
+
+need to add a kink: agg-d = ifelse(agg-d <0 non-dac, nonDAcdem, agg-d)
+
+### need to add the two curves together here, not the data points 
+
+
+
+
+Non-DAC's are willing to pay more for electric vehicles to keep their
+communities clean than DAC's are. This is likely a result of Non-DAC's
+tending to be composed of wealthier predominately white individuals that
+have more disposable income. Therefore, they are willing ot pay more to
+have a clean neighborhood than a DAC community member who makes less
+money.
+
+**DAC Demand**
+
+$$ P=116,855-6.61Q $$
+
+**Non-DAC Demand**
+
+$$ P=158,034-2.73Q $$
+
+### 2
+
+*One kilogram (kg) of lithium is estimated to cause \$300 dollars worth
+of damage in health costs to local communities living near mines. Each
+EV requires a lithium ion battery containing 63kg of lithium. Assuming
+there are no other externalities caused by EV production, what is the
+marginal externality cost per EV produced?*
+
+```{r}
+mec_ev <- 300*63
+mec_ev
+```
+
+the answer is `r mec_ev`
+
+### 3
+
+```{r}
+
+#making a new df creating the aggregate demand 
+ag_data <- data.frame(price = seq(0,160000, length.out=101)) %>% 
+  
+  #new colomn for  finding the quantity demanded at each price 
+  mutate(q_dac = pmax( 0, dem_q(int= dac_lm$coefficients[[1]], P = price, slope=dac_lm$coefficients[[2]] ))) %>%
+  mutate(q_non_dac = pmax(0, dem_q(int= non_dac_lm$coefficients[[1]], P = price, slope=non_dac_lm$coefficients[[2]] ))) %>%
+  #adding up each of the quantities demanded at each price 
+  mutate(q_agg = q_dac + q_non_dac) %>% 
+  pivot_longer(
+    cols= c(q_dac:q_agg),
+    names_to = "type",
+    values_to = "quantity")
+
+ # ag_data[ag_data == 0] <- NA
+
+######################  Agg dem equation  ###############################################
+
+ag_lm <- lm(price ~ quantity, data = filter(ag_data, type =="q_agg"))
+
+ag_lm_lower <- lm(price ~ quantity, data = filter(ag_data, type =="q_agg", price <= dac_lm$coefficients[[1]]))
+ag_lm_higher <- lm(price ~ quantity, data = filter(ag_data, type =="q_agg", price >= dac_lm$coefficients[[1]]))
+
+```
+
+```{r, fig.cap = "This graph here shows the three different demand curves for EV's in DAC's, non-DAC's, and their aggregate demand. It shows that DAc communities have a lower demand and non-DAC's have a higher demand. The kink in the aggregate demand represents the aggregate demand mirroring the non-DAC demand at. agiven price until the DAC demand also starts."}
+
+#creating a ggplot of both the lm
+ggplot(ag_data, aes(x= quantity, y = price, color = type)) +
+  # geom_smooth(se=FALSE) +
+  labs(x = "Quantity of EVs", y = "Price ($)") +
+geom_line() +
+
+  # stat_smooth(method = "lm", se=FALSE) +
+# geom_hline(yintercept=50000, color = "black") +
+  theme_minimal()
+
+
+```
+
+*What is the aggregate annual demand curve for EVs?*
+
+$$ P = 151,383 -2.036 Q $$
+
+*What is the supply curve for EVs?*
+
+```{r}
+#quantity at 50,000
+q_market <- dem_q(ag_lm$coefficients[1], 50000, ag_lm$coefficients[2])
+
+
+#slope of the supply 
+sup_slope <- (0-50000)/(0 - q_market)
+
+
+
+```
+
+
+**Supply Curve:**
+$$ P =   1.004107 Q $$
+
+*What is the "benefit" to consumers under the status quo?*
+
+```{r}
+
+
+
+#calculating the consumer benefit triangle 
+cons_ben <- 0.5*(ag_lm$coefficients[1] - 50000)*q_market
+
+
+
+#calculating producer benefit 
+prod_ben <- 0.5*(50000-0)*q_market
+
+
+
+#calculating the environmental cost
+market_envtl_cost <- q_market* mec_ev
+
+
+#calculating the consumer benefit triangle of the dac community manually 
+dac_ben <- 0.5*(dac_lm$coefficients[1] - 50000)* dem_q(dac_lm$coefficients[1], 50000, dac_lm$coefficients[2])
+dac_ben
+
+#take the aggregate benfit and subtract the dac benefit to find the non-dac benefit 
+
+non_dac_ben <- 0.5*(non_dac_lm$coefficients[1] - 50000)* dem_q(non_dac_lm$coefficients[1], 50000, non_dac_lm$coefficients[2])
+non_dac_ben
+
+
+#try to do the integral instead when you have time 
+
+
+```
+
+The benefit to consumers is **$2,524,210,906**.
+
+*What is the "benefit" to producers under the status quo?* 
+
+The benefit to producer is **$ 1,244,887,764 **.
+
+*What is the environmental cost under the status quo?*
+
+
+
+The environmental cost is **$941,135,149  ** at the market equilibrium.
+
+
+
+### 4
+
+*How is the current consumer benefit divided between DAC and non-DACconsumers?*
+
+The DAC benefit is  **$338,017,962** and the Non-DAC benefit is **$2,136,894,908** of the total consumer benefit.
+
+
+
+### 5
+
+*Derive the optimal EV tax (in \$ per vehicle) to internalize the lithium mining externality. Noting that recent research has shown that DACs are far more likely to contain mining activity, assume that the mining externality is borne entirely by the DAC group. What would be the effects of this tax on:*
+
+The optimal EV tax to internalize the lithium mining externality should be **$18,900** per vehicle 
+
+**(a)** The amount of EVs produced and consumed 
+
+
+
+```{r}
+## The amount of EVs produced and consumed 
+msc_eq_q <- fzero(function(Q) F3(Q, int= ag_lm$coefficients[1] , slope = ag_lm$coefficients[2], int2 = 18900 , slope2  = sup_slope), c(-10000000000, 1000000000000))$x
+msc_eq_q
+
+
+
+```
+
+
+
+**(b)** The price of EVs
+
+```{r}
+#The price of EVs. plug in the demanded quantity to find price 
+msc_eq_p <- dem_p(int= ag_lm$coefficients[1], Q = msc_eq_q, slope = ag_lm$coefficients[2])
+msc_eq_p
+
+
+```
+
+
+
+
+**(c)** Overall welfare of non-DAC consumers 
+
+
+```{r}
+#finding the area of the triangle for non-DAC consumers 
+#.5 * price * quantity demanded at MSC and aggregate demand equilibrium for the non-dac
+non_dac_welfare <- 0.5*(non_dac_lm$coefficients[1] - msc_eq_p)*dem_q(non_dac_lm$coefficients[1], P = msc_eq_p, slope = non_dac_lm$coefficients[2])
+
+non_dac_welfare
+
+```
+
+
+
+
+**(d)** Overall welfare of DAC consumers 
+
+
+```{r}
+##finding the area of the triangle for DAC consumers 
+#.5 * price * quantity demanded at MSC and aggregate demand equilibrium for the dac
+dac_welfare <- 0.5*(dac_lm$coefficients[1] - msc_eq_p)*dem_q(dac_lm$coefficients[1], P = msc_eq_p, slope = dac_lm$coefficients[2])
+
+dac_welfare
+
+```
+
+
+
+**(e)** EV producers 
+
+```{r}
+
+#.5 x the equilibrium price * equilibrium quantity 
+prod_welfare <- 0.5*(msc_eq_p - mec_ev)*msc_eq_q
+prod_welfare
+
+
+```
+
+
+
+
+**(f)** Total environmental damage
+
+```{r}
+#environmental price multiplied by the quantity 
+envt_damage <- mec_ev*msc_eq_q
+envt_damage
+
+```
+
+
+**(g)** Total tax revenue generated
+
+
+```{r}
+#environmental price multiplied by the quantity 
+tax_rev <- mec_ev*msc_eq_q
+tax_rev
+
+```
+
+
+
+
+
+### 6
+
+*Now, assume that all revenue from the EV tax will be redistributed to
+the consumers in proportion to their pre-tax consumption. For example,
+if 80% of the EVs were consumed by non-DAC consumers, then they get 80%
+of the tax revenue. Additionally, consider that emerging scientific
+evidence suggests the true environmental damages from lithium mining may
+be much higher than \$300. For a range of values of external costs per
+kg of lithium (\$350, \$400, \$450, and \$500 per kg), calculate the
+effects of an EV tax on:*
+
+**(a)** Overall welfare of non-DAC consumers
+
+**(b)** Overall welfare of DAC consumers
+
+**(c)** EV producers
+
+
+
+
+### 7
+
+*Now, consider the fact that the purchase of EVs not only leads to
+lithium mining, but also helps mitigate climate change by replacing
+gasoline cars. Suppose that climate change damages fall mostly outside
+California, to a lesser extent on DAC consumers, and not at all on
+non-DAC consumers. Qualitatively answer the following (in 1-3 sentences
+each):*
+
+**(a)** How does the presence of climate change damages from gasoline
+cars affect the optimal EV tax in California?
+
+**(b)** Assuming tax revenue does not get returned to consumers, are
+non-DAC consumers more or less likely to support this new tax, relative
+to the tax that only accounts for the mining externality? Why?
+
+**(c)** Assuming tax revenue does not get returned to consumers, are DAC
+consumers more or less likely to support this new tax, relative to the
+tax that only accounts for the mining externality? Why?
